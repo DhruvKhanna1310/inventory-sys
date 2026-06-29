@@ -1,0 +1,23 @@
+{
+  "_comment": "Copy this file to sync_config.json and fill it in. sync_config.json is gitignored — never commit the service key.",
+
+  "supabase_url": "https://dwewijcyvmkhtrjdukqf.supabase.co",
+  "supabase_service_key": "PASTE_SERVICE_ROLE_KEY_HERE",
+  "passport_store_id": 110,
+
+  "source": "local",
+
+  "local_dir": "\\\\10.5.48.2\\XMLGateway\\BOOutBox",
+
+  "ftp": {
+    "host": "10.5.48.2",
+    "port": 21,
+    "user": "GilbarcoFTP",
+    "password": "XMLUser4FTP",
+    "dir": "/BOOutBox"
+  },
+
+  "file_pattern": "StoreClose*.xml",
+  "archive_dir": "processed",
+  "delete_after_processing": false
+}

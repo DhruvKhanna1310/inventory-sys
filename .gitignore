@@ -1,1 +1,7 @@
 .DS_Store
+
+# EOD sync — never commit the service key, runtime logs, or processed files
+eod_sync/sync_config.json
+eod_sync/logs/
+eod_sync/processed/
+__pycache__/

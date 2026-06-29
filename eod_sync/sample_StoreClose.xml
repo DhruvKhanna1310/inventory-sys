@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic StoreClose sample matching the confirmed Passport journal structure,
+  used only to test the parser offline (see "parse mode" in the README).
+  A real namespace is included on purpose so we exercise namespace-agnostic parsing.
+
+  Expected result:
+    049000006344 (Coca-Cola): 2 + 1, minus a 1-unit refund   = 2
+    611269991000 (Red Bull):  1                                = 1
+    632565000012 (Fiji):      2 + 2                            = 4
+    070847811169 (Monster):   1                                = 1
+    040000000013 (Snickers, not in our catalog -> unmatched)   = 2
+-->
+<JournalReport xmlns="http://www.naxml.org/POSBO/Vocabulary/2003-10-16">
+  <MovementHeader>
+    <ReportPeriod>Day</ReportPeriod>
+    <BusinessDate>2026-06-29</BusinessDate>
+    <StoreLocationID>110</StoreLocationID>
+  </MovementHeader>
+
+  <SaleEvent>
+    <TransactionDetailGroup>
+      <TransactionLine>
+        <ItemLine>
+          <ItemCode>
+            <POSCode>049000006344</POSCode>
+            <POSCodeModifier name="pc">2</POSCodeModifier>
+          </ItemCode>
+        </ItemLine>
+      </TransactionLine>
+      <TransactionLine>
+        <ItemLine>
+          <ItemCode>
+            <POSCode>611269991000</POSCode>
+            <POSCodeModifier name="pc">1</POSCodeModifier>
+          </ItemCode>
+        </ItemLine>
+      </TransactionLine>
+      <TransactionLine>
+        <ItemLine>
+          <ItemCode>
+            <POSCode>040000000013</POSCode>
+            <POSCodeModifier name="pc">2</POSCodeModifier>
+          </ItemCode>
+        </ItemLine>
+      </TransactionLine>
+    </TransactionDetailGroup>
+  </SaleEvent>
+
+  <SaleEvent>
+    <TransactionDetailGroup>
+      <TransactionLine>
+        <ItemLine>
+          <ItemCode>
+            <POSCode>049000006344</POSCode>
+            <POSCodeModifier name="pc">1</POSCodeModifier>
+          </ItemCode>
+        </ItemLine>
+      </TransactionLine>
+      <TransactionLine>
+        <ItemLine>
+          <ItemCode>
+            <POSCode>632565000012</POSCode>
+            <POSCodeModifier name="pc">2</POSCodeModifier>
+          </ItemCode>
+        </ItemLine>
+      </TransactionLine>
+      <TransactionLine>
+        <ItemLine>
+          <ItemCode>
+            <POSCode>632565000012</POSCode>
+            <POSCodeModifier name="pc">2</POSCodeModifier>
+          </ItemCode>
+        </ItemLine>
+      </TransactionLine>
+      <TransactionLine>
+        <ItemLine>
+          <ItemCode>
+            <POSCode>070847811169</POSCode>
+            <POSCodeModifier name="pc">1</POSCodeModifier>
+          </ItemCode>
+        </ItemLine>
+      </TransactionLine>
+    </TransactionDetailGroup>
+  </SaleEvent>
+
+  <!-- a refund: nets against the day's Coca-Cola sales -->
+  <SaleEvent>
+    <TransactionDetailGroup>
+      <TransactionLine>
+        <ItemLine>
+          <ItemCode>
+            <POSCode>049000006344</POSCode>
+            <POSCodeModifier name="pc">-1</POSCodeModifier>
+          </ItemCode>
+        </ItemLine>
+      </TransactionLine>
+    </TransactionDetailGroup>
+  </SaleEvent>
+</JournalReport>
