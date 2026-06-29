@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuikPick Staff Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root {
+    --brand: #1A56DB;
+    --brand-dark: #1340A8;
+    --green: #16A34A;
+    --orange: #EA580C;
+    --red: #DC2626;
+    --dark: #0F172A;
+    --surface: #1E293B;
+    --border: #334155;
+    --text: #F1F5F9;
+    --muted: #94A3B8;
+    --radius: 12px;
+  }
+  body { background:var(--dark); color:var(--text); font-family:-apple-system,Arial,sans-serif; min-height:100vh; }
+
+  /* ── HEADER ── */
+  .header { background:var(--surface); padding:16px 20px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+  .header-logo { font-size:20px; font-weight:800; color:var(--brand); }
+  .header-sub { font-size:11px; color:var(--muted); }
+  .nav-link { font-size:13px; color:var(--brand); text-decoration:none; font-weight:600; padding:6px 12px; border:1px solid var(--border); border-radius:20px; }
+  .nav-link:active { background:var(--border); }
+
+  /* ── MAIN ── */
+  .main { padding:20px; max-width:760px; margin:0 auto; }
+
+  /* ── STATION ── */
+  .station-card { background:var(--surface); border-radius:var(--radius); padding:14px 16px; margin-bottom:16px; border:1px solid var(--border); display:flex; align-items:center; gap:10px; }
+  .station-dot { width:8px; height:8px; border-radius:50%; background:var(--green); animation:pulse 2s infinite; flex-shrink:0; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .station-name { font-size:13px; font-weight:600; }
+  .station-sub { font-size:11px; color:var(--muted); }
+
+  /* ── STATS ── */
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+  .stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px; text-align:center; }
+  .stat-num { font-size:22px; font-weight:800; }
+  .stat-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-top:2px; }
+  .stat.low .stat-num { color:var(--orange); }
+  .stat.hidden .stat-num { color:var(--muted); }
+  .stat.instock .stat-num { color:var(--green); }
+  @media (max-width:520px) { .stats { grid-template-columns:repeat(2,1fr); } }
+
+  /* ── CONTROLS ── */
+  .controls { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .search-input { flex:1; min-width:160px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:11px 14px; color:var(--text); font-size:14px; outline:none; }
+  .search-input:focus { border-color:var(--brand); }
+  .filter-select { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:11px 14px; color:var(--text); font-size:14px; outline:none; }
+  .refresh-btn { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:11px 14px; color:var(--text); font-size:14px; cursor:pointer; font-weight:600; }
+  .refresh-btn:active { background:var(--border); }
+
+  /* ── PRODUCT ROWS ── */
+  .product-list { display:flex; flex-direction:column; gap:10px; }
+  .row { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; display:flex; gap:14px; align-items:flex-start; }
+  .row.low { border-color:#EA580C66; }
+  .row.off { opacity:.62; }
+  .row-img { width:52px; height:52px; border-radius:8px; object-fit:contain; background:#0F172A; flex-shrink:0; }
+  .row-placeholder { width:52px; height:52px; border-radius:8px; background:#0F172A; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; }
+  .row-body { flex:1; min-width:0; }
+  .row-name { font-size:14px; font-weight:700; line-height:1.3; }
+  .row-meta { font-size:11px; color:var(--muted); margin-top:2px; font-family:monospace; }
+
+  .badges { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+  .badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; text-transform:uppercase; letter-spacing:.4px; }
+  .badge.cat { background:#1E3A8A33; color:#93C5FD; }
+  .badge.lowb { background:#7C2D1233; color:#FB923C; }
+  .badge.manb { background:#3730A333; color:#A5B4FC; }
+
+  /* edit controls */
+  .row-edit { display:flex; gap:14px; align-items:flex-end; margin-top:12px; flex-wrap:wrap; }
+  .field { display:flex; flex-direction:column; gap:4px; }
+  .field-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .qty-stepper { display:flex; align-items:center; }
+  .step-btn { width:34px; height:38px; background:#0F172A; border:1px solid var(--border); color:var(--text); font-size:18px; cursor:pointer; }
+  .step-btn:first-child { border-radius:8px 0 0 8px; }
+  .step-btn:last-child { border-radius:0 8px 8px 0; }
+  .step-btn:active { background:var(--border); }
+  .qty-input { width:56px; height:38px; text-align:center; background:#0F172A; border:1px solid var(--border); border-left:none; border-right:none; color:var(--text); font-size:15px; font-weight:700; outline:none; -moz-appearance:textfield; }
+  .qty-input::-webkit-outer-spin-button, .qty-input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  .price-input { width:84px; height:38px; background:#0F172A; border:1px solid var(--border); border-radius:8px; padding:0 10px; color:var(--text); font-size:15px; outline:none; }
+  .price-input:focus, .qty-input:focus { border-color:var(--brand); }
+
+  .save-row-btn { height:38px; padding:0 16px; background:var(--green); color:white; font-size:13px; font-weight:700; border:none; border-radius:8px; cursor:pointer; }
+  .save-row-btn:active { opacity:.8; }
+  .save-row-btn:disabled { background:var(--border); color:var(--muted); cursor:not-allowed; }
+
+  /* toggle switch */
+  .stock-toggle { display:flex; flex-direction:column; gap:4px; align-items:flex-start; margin-left:auto; }
+  .switch { position:relative; width:46px; height:26px; flex-shrink:0; cursor:pointer; }
+  .switch input { opacity:0; width:0; height:0; }
+  .slider { position:absolute; inset:0; background:var(--border); border-radius:26px; transition:.2s; }
+  .slider::before { content:""; position:absolute; height:20px; width:20px; left:3px; bottom:3px; background:white; border-radius:50%; transition:.2s; }
+  .switch input:checked + .slider { background:var(--green); }
+  .switch input:checked + .slider::before { transform:translateX(20px); }
+
+  .empty-state { text-align:center; padding:50px 20px; color:var(--muted); }
+  .empty-icon { font-size:42px; margin-bottom:12px; }
+  .empty-text { font-size:14px; }
+
+  /* ── TOAST / LOADING ── */
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(100px); background:var(--green); color:white; padding:12px 20px; border-radius:30px; font-size:14px; font-weight:600; transition:transform 0.3s; z-index:1000; white-space:nowrap; }
+  .toast.error { background:var(--red); }
+  .toast.show { transform:translateX(-50%) translateY(0); }
+  .loading-overlay { position:fixed; inset:0; background:rgba(15,23,42,0.8); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:200; gap:12px; }
+  .loading-overlay.show { display:flex; }
+  .loading-spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--brand); border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .loading-text { font-size:14px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loadingText">Loading inventory...</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<!-- HEADER -->
+<div class="header">
+  <div>
+    <div class="header-logo">QuikPick</div>
+    <div class="header-sub">Staff Dashboard</div>
+  </div>
+  <a href="index.html" class="nav-link">+ Scan</a>
+</div>
+
+<div class="main">
+
+  <!-- STATION -->
+  <div class="station-card">
+    <div class="station-dot"></div>
+    <div>
+      <div class="station-name" id="stationName">Loading station...</div>
+      <div class="station-sub" id="stationSub">StoreLocationID 110</div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats">
+    <div class="stat"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Products</div></div>
+    <div class="stat instock"><div class="stat-num" id="statActive">0</div><div class="stat-label">In Stock</div></div>
+    <div class="stat low"><div class="stat-num" id="statLow">0</div><div class="stat-label">Low Stock</div></div>
+    <div class="stat hidden"><div class="stat-num" id="statHidden">0</div><div class="stat-label">Hidden</div></div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <input type="text" class="search-input" id="searchInput" placeholder="Search products…" oninput="onSearch(this.value)">
+    <select class="filter-select" id="filterSelect" onchange="onFilter(this.value)">
+      <option value="all">All categories</option>
+      <option value="drinks">Drinks</option>
+      <option value="snacks">Snacks</option>
+      <option value="household">Household</option>
+      <option value="dairy">Dairy</option>
+      <option value="other">Other</option>
+    </select>
+    <button class="refresh-btn" onclick="loadProducts()">↻ Refresh</button>
+  </div>
+
+  <!-- PRODUCT LIST -->
+  <div class="product-list" id="productList"></div>
+
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://dwewijcyvmkhtrjdukqf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_xvps2Js_SAx8LfHt58e4Uw_6fz4M8Lc';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ── STATE ───────────────────────────────────────────────────────────────────
+let stationId = null;
+let products = [];
+let filterText = '';
+let filterCategory = 'all';
+
+// ── INIT ────────────────────────────────────────────────────────────────────
+async function init() {
+  const { data: stations } = await db
+    .from('stations').select('*').eq('passport_store_id', 110).limit(1);
+  if (stations && stations.length) {
+    stationId = stations[0].id;
+    document.getElementById('stationName').textContent = stations[0].name;
+    document.getElementById('stationSub').textContent =
+      `StoreLocationID ${stations[0].passport_store_id} · ${stations[0].address}`;
+  }
+  await loadProducts();
+}
+
+async function loadProducts() {
+  showLoading('Loading inventory...');
+  const { data, error } = await db
+    .from('products').select('*').eq('station_id', stationId).order('name', { ascending: true });
+  hideLoading();
+  if (error) { showToast('Load failed: ' + error.message, true); return; }
+  products = data || [];
+  render();
+}
+
+// ── RENDER ──────────────────────────────────────────────────────────────────
+function visible() {
+  return products.filter(p => {
+    if (filterCategory !== 'all' && p.category !== filterCategory) return false;
+    if (filterText && !(`${p.name} ${p.upc || ''}`.toLowerCase().includes(filterText))) return false;
+    return true;
+  });
+}
+
+function render() {
+  renderStats();
+  renderList();
+}
+
+function renderStats() {
+  document.getElementById('statTotal').textContent = products.length;
+  document.getElementById('statActive').textContent = products.filter(p => p.is_active).length;
+  document.getElementById('statLow').textContent =
+    products.filter(p => p.stock_quantity <= p.buffer_threshold).length;
+  document.getElementById('statHidden').textContent = products.filter(p => !p.is_active).length;
+}
+
+function renderList() {
+  const list = document.getElementById('productList');
+  const items = visible();
+
+  if (products.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📦</div>
+      <div class="empty-text">No products yet. <a href="index.html" style="color:var(--brand)">Scan some products</a> to build the catalog.</div></div>`;
+    return;
+  }
+  if (items.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div>
+      <div class="empty-text">No products match your filters.</div></div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(p => {
+    const low = p.stock_quantity <= p.buffer_threshold;
+    return `
+    <div class="row ${low ? 'low' : ''} ${p.is_active ? '' : 'off'}" id="row_${p.id}">
+      ${p.image_url
+        ? `<img src="${p.image_url}" class="row-img" onerror="this.outerHTML='<div class=\\'row-placeholder\\'>🥤</div>'">`
+        : `<div class="row-placeholder">🥤</div>`}
+      <div class="row-body">
+        <div class="row-name">${escapeHtml(p.name)}</div>
+        <div class="row-meta">UPC ${p.upc || 'manual'}</div>
+        <div class="badges">
+          <span class="badge cat">${p.category}</span>
+          ${low ? `<span class="badge lowb">Low · ≤${p.buffer_threshold}</span>` : ''}
+          ${p.manual_override ? `<span class="badge manb">Manual</span>` : ''}
+        </div>
+
+        <div class="row-edit">
+          <div class="field">
+            <span class="field-label">Stock</span>
+            <div class="qty-stepper">
+              <button class="step-btn" onclick="bump('${p.id}',-1)">−</button>
+              <input type="number" class="qty-input" id="qty_${p.id}" value="${p.stock_quantity}" min="0" inputmode="numeric">
+              <button class="step-btn" onclick="bump('${p.id}',1)">+</button>
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-label">Price $</span>
+            <input type="number" class="price-input" id="price_${p.id}" value="${parseFloat(p.price).toFixed(2)}" step="0.01" min="0">
+          </div>
+          <button class="save-row-btn" onclick="saveRow('${p.id}')">Save</button>
+
+          <div class="stock-toggle">
+            <span class="field-label">${p.is_active ? 'In stock' : 'Hidden'}</span>
+            <label class="switch">
+              <input type="checkbox" ${p.is_active ? 'checked' : ''} onchange="toggleStock('${p.id}', this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── ACTIONS ─────────────────────────────────────────────────────────────────
+function bump(id, delta) {
+  const input = document.getElementById('qty_' + id);
+  const v = Math.max(0, (parseInt(input.value) || 0) + delta);
+  input.value = v;
+}
+
+// Save quantity + price for one row. Auto-updates is_active from the buffer
+// threshold UNLESS staff has manually overridden visibility for this item.
+async function saveRow(id) {
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+  const qty = parseInt(document.getElementById('qty_' + id).value);
+  const price = parseFloat(document.getElementById('price_' + id).value);
+  if (isNaN(qty) || qty < 0) { showToast('Enter a valid quantity', true); return; }
+  if (isNaN(price) || price < 0) { showToast('Enter a valid price', true); return; }
+
+  const patch = { stock_quantity: qty, price: price };
+  // Respect a manual override; otherwise auto-hide at/below the buffer.
+  if (!p.manual_override) patch.is_active = qty > p.buffer_threshold;
+
+  const btn = event.target; btn.disabled = true; btn.textContent = '…';
+  const { data, error } = await db.from('products').update(patch).eq('id', id).select();
+  if (error) { showToast('Save failed: ' + error.message, true); btn.disabled = false; btn.textContent = 'Save'; return; }
+  Object.assign(p, data[0]);
+  showToast(`✓ ${p.name} updated`);
+  render();
+}
+
+// Explicit show/hide. Marks the item as a manual override so the buffer logic
+// won't silently flip it back.
+async function toggleStock(id, makeActive) {
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+  const { data, error } = await db.from('products')
+    .update({ is_active: makeActive, manual_override: true }).eq('id', id).select();
+  if (error) { showToast('Update failed: ' + error.message, true); render(); return; }
+  Object.assign(p, data[0]);
+  showToast(makeActive ? `✓ ${p.name} back in stock` : `${p.name} hidden from app`);
+  render();
+}
+
+// ── FILTERS ─────────────────────────────────────────────────────────────────
+function onSearch(v) { filterText = v.trim().toLowerCase(); renderList(); }
+function onFilter(v) { filterCategory = v; renderList(); }
+
+// ── UTILS ───────────────────────────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function showLoading(t) { document.getElementById('loadingText').textContent = t || 'Loading...'; document.getElementById('loadingOverlay').classList.add('show'); }
+function hideLoading() { document.getElementById('loadingOverlay').classList.remove('show'); }
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast ${isError ? 'error' : ''} show`;
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+init();
+</script>
+</body>
+</html>
