@@ -9,6 +9,12 @@ auto-hidden from the customer app unless staff set a manual override.
 - **Pure Python standard library** — no `pip install`. Just Python 3.8+.
 - Runs against a **local/UNC folder** (the BOOutBox share) **or** the Passport
   **built-in FTP server**. Same code works on the back office PC now or a cloud cron later.
+- Also records per-product daily sales into `sales_daily`, which powers the
+  Sales Report (`report.html`) and demand forecasting.
+
+> **Prerequisite:** run `migrations/001_sales_daily.sql` in the Supabase SQL
+> Editor before the first sync, so the `sales_daily` table exists for the sync
+> to write into.
 
 ---
 

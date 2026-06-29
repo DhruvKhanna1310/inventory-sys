@@ -112,6 +112,11 @@ class Supabase:
         return self._request("POST", "/" + table, body=body,
                              prefer="return=representation")
 
+    def upsert(self, table, rows, on_conflict):
+        # Bulk upsert on a unique constraint (idempotent reruns).
+        return self._request("POST", "/" + table, params={"on_conflict": on_conflict},
+                             body=rows, prefer="resolution=merge-duplicates,return=minimal")
+
 
 # ── XML parsing (namespace-agnostic) ─────────────────────────────────────────
 def _local(tag):
@@ -304,6 +309,7 @@ def process_file(name, data, ref, supa, station_id, products_by_upc, source, dry
 
     matched = flagged_low = 0
     errors = []
+    history_rows = []  # one sales_daily row per matched product
     now = datetime.now(timezone.utc).isoformat()
 
     for upc, sold in sales.items():
@@ -317,6 +323,18 @@ def process_file(name, data, ref, supa, station_id, products_by_upc, source, dry
         crossed_low = old > p["buffer_threshold"] >= new
         if crossed_low:
             flagged_low += 1
+
+        # Record the day's sale (history is set-based, so a rerun overwrites
+        # rather than double-counts — safer than the stock decrement).
+        history_rows.append({
+            "station_id": station_id,
+            "product_id": p["id"],
+            "upc": upc,
+            "product_name": p["name"],
+            "sale_date": business_date,
+            "quantity_sold": sold,
+            "unit_price": p.get("price", 0),
+        })
 
         verb = "would deduct" if dry_run else "deduct"
         log(f"  {p['name']}: {verb} {sold}  ({old} -> {new})"
@@ -332,6 +350,17 @@ def process_file(name, data, ref, supa, station_id, products_by_upc, source, dry
             except Exception as e:
                 errors.append(f"{p['name']} ({upc}): {e}")
                 log(f"  ! update failed for {p['name']}: {e}", "ERROR")
+
+    # Persist per-product sales history (powers the Sales Report + forecasting).
+    if history_rows:
+        if dry_run:
+            log(f"  would record {len(history_rows)} sales_daily rows for {business_date}")
+        else:
+            try:
+                supa.upsert("sales_daily", history_rows, "product_id,sale_date")
+            except Exception as e:
+                errors.append(f"sales_daily upsert: {e}")
+                log(f"  ! sales_daily write failed: {e}", "ERROR")
 
     processed = len(sales)
     unmatched = processed - matched
@@ -409,7 +438,7 @@ def main():
     log(f"station {stations[0]['name']} ({station_id})")
 
     products = supa.get("products", {
-        "select": "id,upc,name,stock_quantity,buffer_threshold,is_active,manual_override",
+        "select": "id,upc,name,price,stock_quantity,buffer_threshold,is_active,manual_override",
         "station_id": f"eq.{station_id}",
     })
     # Index by normalized UPC, plus a leading-zero-stripped key to bridge the

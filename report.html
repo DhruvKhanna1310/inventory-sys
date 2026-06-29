@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuikPick Sales Report</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root {
+    --brand:#1A56DB; --brand-dark:#1340A8; --green:#16A34A; --orange:#EA580C;
+    --red:#DC2626; --dark:#0F172A; --surface:#1E293B; --border:#334155;
+    --text:#F1F5F9; --muted:#94A3B8; --radius:12px;
+  }
+  body { background:var(--dark); color:var(--text); font-family:-apple-system,Arial,sans-serif; min-height:100vh; }
+
+  .header { background:var(--surface); padding:16px 20px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+  .header-logo { font-size:20px; font-weight:800; color:var(--brand); }
+  .header-sub { font-size:11px; color:var(--muted); }
+  .nav { display:flex; gap:8px; }
+  .nav-link { font-size:13px; color:var(--brand); text-decoration:none; font-weight:600; padding:6px 12px; border:1px solid var(--border); border-radius:20px; }
+  .nav-link:active { background:var(--border); }
+
+  .main { padding:20px; max-width:880px; margin:0 auto; }
+
+  .banner { background:#3B2000; border:1px solid #EA580C44; color:#FB923C; border-radius:var(--radius); padding:14px 16px; font-size:13px; margin-bottom:16px; line-height:1.5; }
+
+  /* controls */
+  .controls { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+  .seg { display:flex; gap:0; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .seg button { background:var(--surface); color:var(--muted); border:none; padding:9px 13px; font-size:13px; font-weight:600; cursor:pointer; border-right:1px solid var(--border); }
+  .seg button:last-child { border-right:none; }
+  .seg button.active { background:var(--brand); color:#fff; }
+  .spacer { flex:1; }
+
+  /* KPIs */
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+  .kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; }
+  .kpi-num { font-size:22px; font-weight:800; }
+  .kpi-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-top:3px; }
+  .kpi-sub { font-size:11px; color:var(--muted); margin-top:4px; }
+  @media (max-width:560px){ .kpis{ grid-template-columns:repeat(2,1fr);} }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+  .card-title { font-size:14px; font-weight:700; margin-bottom:12px; }
+  .chart-wrap { position:relative; height:240px; }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--border); }
+  th { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tr:last-child td { border-bottom:none; }
+  .bar { height:6px; background:var(--brand); border-radius:3px; margin-top:4px; }
+
+  .empty { text-align:center; padding:50px 20px; color:var(--muted); }
+  .empty-icon { font-size:42px; margin-bottom:12px; }
+
+  .loading-overlay { position:fixed; inset:0; background:rgba(15,23,42,.8); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:200; gap:12px; }
+  .loading-overlay.show { display:flex; }
+  .spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--brand); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg);} }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div></div>
+
+<div class="header">
+  <div>
+    <div class="header-logo">QuikPick</div>
+    <div class="header-sub">Sales Report</div>
+  </div>
+  <div class="nav">
+    <a href="dashboard.html" class="nav-link">Dashboard</a>
+    <a href="index.html" class="nav-link">+ Scan</a>
+  </div>
+</div>
+
+<div class="main">
+
+  <div id="banner" class="banner" style="display:none"></div>
+
+  <div class="controls" id="controls" style="display:none">
+    <div class="seg" id="periodSeg">
+      <button data-p="this_month" class="active">This month</button>
+      <button data-p="last_month">Last month</button>
+      <button data-p="7">Last 7d</button>
+      <button data-p="30">Last 30d</button>
+      <button data-p="all">All time</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="seg" id="metricSeg">
+      <button data-m="revenue" class="active">Revenue $</button>
+      <button data-m="units">Units</button>
+    </div>
+  </div>
+
+  <div id="reportBody"></div>
+
+  <div id="emptyState" class="empty" style="display:none">
+    <div class="empty-icon">📊</div>
+    <div id="emptyText">No sales history yet.</div>
+  </div>
+
+</div>
+
+<script>
+// ── CONFIG ──
+const SUPABASE_URL = 'https://dwewijcyvmkhtrjdukqf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_xvps2Js_SAx8LfHt58e4Uw_6fz4M8Lc';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let stationId = null;
+let rows = [];               // sales_daily rows
+let period = 'this_month';
+let metric = 'revenue';
+let charts = {};
+
+const fmt$ = n => '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtN = n => n.toLocaleString();
+const revenueOf = r => (r.quantity_sold || 0) * parseFloat(r.unit_price || 0);
+
+function showLoading(b){ document.getElementById('loadingOverlay').classList.toggle('show', b); }
+
+async function init() {
+  showLoading(true);
+  const { data: stations } = await db.from('stations').select('id').eq('passport_store_id', 110).limit(1);
+  stationId = stations && stations[0] && stations[0].id;
+
+  const { data, error } = await db
+    .from('sales_daily').select('*').eq('station_id', stationId)
+    .order('sale_date', { ascending: true });
+  showLoading(false);
+
+  if (error) {
+    // most likely the sales_daily table/migration isn't in place yet
+    return showEmpty(
+      `The <code>sales_daily</code> table isn't set up yet. Run <code>migrations/001_sales_daily.sql</code> ` +
+      `in the Supabase SQL Editor. Sales then start accruing after the first nightly EOD sync.`
+    );
+  }
+  rows = data || [];
+  if (rows.length === 0) {
+    return showEmpty(
+      `No sales recorded yet. History accrues after the first nightly EOD sync runs on the back office PC. ` +
+      `Check back once a sync has completed.`
+    );
+  }
+
+  document.getElementById('controls').style.display = 'flex';
+  wireControls();
+  render();
+}
+
+function showEmpty(msg) {
+  document.getElementById('emptyState').style.display = 'block';
+  document.getElementById('emptyText').innerHTML = msg;
+}
+
+function wireControls() {
+  document.querySelectorAll('#periodSeg button').forEach(b =>
+    b.onclick = () => { period = b.dataset.p; setActive('#periodSeg', b); render(); });
+  document.querySelectorAll('#metricSeg button').forEach(b =>
+    b.onclick = () => { metric = b.dataset.m; setActive('#metricSeg', b); render(); });
+}
+function setActive(sel, btn) {
+  document.querySelectorAll(sel + ' button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ── date helpers ──
+function ymd(d){ return d.toISOString().slice(0,10); }
+function periodRange() {
+  const now = new Date();
+  const today = ymd(now);
+  if (period === 'this_month') return [today.slice(0,7) + '-01', today];
+  if (period === 'last_month') {
+    const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    return [ymd(lm), ymd(end)];
+  }
+  if (period === 'all') return ['0000-01-01', today];
+  const days = parseInt(period);
+  const start = new Date(now); start.setDate(start.getDate() - (days - 1));
+  return [ymd(start), today];
+}
+
+function render() {
+  const [start, end] = periodRange();
+  const inRange = rows.filter(r => r.sale_date >= start && r.sale_date <= end);
+  const valOf = metric === 'revenue' ? revenueOf : (r => r.quantity_sold || 0);
+  const fmt = metric === 'revenue' ? fmt$ : fmtN;
+
+  // KPIs
+  const totalRev = inRange.reduce((s,r)=>s+revenueOf(r),0);
+  const totalUnits = inRange.reduce((s,r)=>s+(r.quantity_sold||0),0);
+  const days = new Set(inRange.map(r=>r.sale_date)).size || 1;
+  const byProd = {};
+  inRange.forEach(r => { byProd[r.product_name] = (byProd[r.product_name]||0) + valOf(r); });
+  const top = Object.entries(byProd).sort((a,b)=>b[1]-a[1])[0];
+
+  let html = `
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num">${fmt$(totalRev)}</div><div class="kpi-label">Revenue</div></div>
+      <div class="kpi"><div class="kpi-num">${fmtN(totalUnits)}</div><div class="kpi-label">Units sold</div></div>
+      <div class="kpi"><div class="kpi-num">${fmt$(totalRev/days)}</div><div class="kpi-label">Avg / day</div><div class="kpi-sub">${days} day${days!==1?'s':''} w/ sales</div></div>
+      <div class="kpi"><div class="kpi-num" style="font-size:15px;line-height:1.3">${top?top[0]:'—'}</div><div class="kpi-label">Top seller</div><div class="kpi-sub">${top?fmt(top[1]):''}</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Month over month (${metric==='revenue'?'revenue':'units'})</div>
+      <div class="chart-wrap"><canvas id="monthChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Daily ${metric==='revenue'?'revenue':'units'} — selected period</div>
+      <div class="chart-wrap"><canvas id="dailyChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">By product — selected period</div>
+      ${productTable(inRange, valOf, fmt)}
+    </div>`;
+  document.getElementById('reportBody').innerHTML = html;
+
+  drawMonthChart();
+  drawDailyChart(inRange, valOf);
+}
+
+function productTable(inRange, valOf, fmt) {
+  const agg = {};
+  inRange.forEach(r => {
+    const k = r.product_name || r.upc;
+    if (!agg[k]) agg[k] = { units:0, rev:0, val:0 };
+    agg[k].units += r.quantity_sold||0; agg[k].rev += revenueOf(r); agg[k].val += valOf(r);
+  });
+  const list = Object.entries(agg).sort((a,b)=>b[1].val-a[1].val);
+  if (!list.length) return `<div style="color:var(--muted);font-size:13px">No sales in this period.</div>`;
+  const max = list[0][1].val || 1;
+  const totalRev = list.reduce((s,x)=>s+x[1].rev,0) || 1;
+  return `<table>
+    <thead><tr><th>Product</th><th class="num">Units</th><th class="num">Revenue</th><th class="num">% rev</th></tr></thead>
+    <tbody>${list.map(([name,v])=>`
+      <tr>
+        <td>${name}<div class="bar" style="width:${Math.max(4,v.val/max*100)}%"></div></td>
+        <td class="num">${fmtN(v.units)}</td>
+        <td class="num">${fmt$(v.rev)}</td>
+        <td class="num">${(v.rev/totalRev*100).toFixed(0)}%</td>
+      </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// ── charts ──
+function destroy(id){ if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+const GRID = '#33415588', TICK = '#94A3B8';
+
+function drawMonthChart() {
+  const now = new Date();
+  const months = [];
+  for (let i=5; i>=0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    months.push({ key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,
+                  label:d.toLocaleString(undefined,{month:'short',year:'2-digit'}) });
+  }
+  const valOf = metric==='revenue' ? revenueOf : (r=>r.quantity_sold||0);
+  const data = months.map(m => rows.filter(r=>r.sale_date.startsWith(m.key)).reduce((s,r)=>s+valOf(r),0));
+  destroy('monthChart');
+  charts.monthChart = new Chart(document.getElementById('monthChart'), {
+    type:'bar',
+    data:{ labels:months.map(m=>m.label),
+      data, datasets:[{ data, backgroundColor:'#1A56DB', borderRadius:6 }] },
+    options: baseOpts(true)
+  });
+}
+
+function drawDailyChart(inRange, valOf) {
+  const [start, end] = periodRange();
+  const byDay = {};
+  inRange.forEach(r => { byDay[r.sale_date] = (byDay[r.sale_date]||0) + valOf(r); });
+  const labels = Object.keys(byDay).sort();
+  const data = labels.map(d=>byDay[d]);
+  destroy('dailyChart');
+  charts.dailyChart = new Chart(document.getElementById('dailyChart'), {
+    type:'line',
+    data:{ labels:labels.map(d=>d.slice(5)),
+      datasets:[{ data, borderColor:'#16A34A', backgroundColor:'#16A34A22', fill:true, tension:.3, pointRadius:2 }] },
+    options: baseOpts(false)
+  });
+}
+
+function baseOpts(isBar) {
+  const money = metric === 'revenue';
+  return {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ display:false },
+      tooltip:{ callbacks:{ label:c => (money?'$':'') + c.parsed.y.toLocaleString(undefined,{maximumFractionDigits:money?2:0}) } } },
+    scales:{
+      x:{ grid:{ color:GRID }, ticks:{ color:TICK, maxRotation:0 } },
+      y:{ grid:{ color:GRID }, ticks:{ color:TICK, callback:v => (money?'$':'') + v } , beginAtZero:true }
+    }
+  };
+}
+
+init();
+</script>
+</body>
+</html>
